@@ -17,38 +17,39 @@
 class MultiThreadedPageRankComputer : public PageRankComputer {
 public:
     MultiThreadedPageRankComputer(uint32_t numThreadsArg) : numThreads(numThreadsArg),
-                                                            barrier(numThreadsArg + 1), dangleSum(0) {};
+                                                            barrier(numThreadsArg + 1) {};
 
     std::vector<PageIdAndRank>
     computeForNetwork(Network const& network, double alpha, uint32_t iterations, double tolerance) const {
         pageHashMap = pageRanksMap();
         currentPageHashMap = pageRanksMap();
         numLinks = std::unordered_map<PageId, uint32_t, PageIdHash>();
+        dangleSum = 0;
         difference = 0;
+        nextIteration = true;
 
         generateIds(network);
+
+        PageRank initialRank = 1.0 / network.getSize();
 
         // Bucket sort on edges, sorting by target of the link
         std::unordered_map<PageId, std::vector<std::pair<PageId, PageId>>, PageIdHash> edgesVectors;
         for (auto page : network.getPages()) {
-            pageHashMap[page.getId()] = 1.0 / network.getSize();
+            pageHashMap[page.getId()] = initialRank;
+            currentPageHashMap[page.getId()] = 0;
             numLinks[page.getId()] = page.getLinks().size();
 
             for (auto link : page.getLinks()) {
                 edgesVectors[link].emplace_back(page.getId(), link);
             }
-        } // todo not optimal?
+        }
 
         pageIdPairs edges;
         for (auto links : edgesVectors) {
             edges.insert(edges.end(), links.second.begin(), links.second.end());
         }
 
-        nextIteration = true;
-        bool tooManyIterations = true;
-
         std::vector<std::thread> threads;
-        std::vector<PageIdAndRank> result;
 
         for (uint32_t i = 0; i < numThreads; ++i) {
             threads.emplace_back(
@@ -56,44 +57,39 @@ public:
                                 alpha, std::ref(network)));
         }
 
+        std::vector<PageIdAndRank> result;
+        bool tooManyIterations = true;
 
         for (uint32_t i = 0; i < iterations; ++i) {
-            barrier.reach();
-            barrier.reach();
-            barrier.reach();
+            barrier.reach(); // Barrier 1
+            barrier.reach(); // Barrier 2
 
             nextIteration = difference >= tolerance;
 
-//            std::cout << currentRankSum << '\n';
-//            for (auto iter : pageHashMap) {
-//                std::cout << iter.second << ' ';
-//            }
-//            std::cout << '\n';
-
             if (!nextIteration) {
-                for (auto iter : currentPageHashMap) {
+                for (auto iter : pageHashMap) {
                     result.emplace_back(PageIdAndRank(iter.first, iter.second));
                 }
                 tooManyIterations = false;
-                i = iterations;
+                i = iterations; // Force loop exit
+            } else if (i == iterations - 1) {
+                nextIteration = false;
             } else {
-                pageHashMap = currentPageHashMap;
-                currentPageHashMap = pageRanksMap();
                 difference = 0;
                 dangleSum = 0;
             }
 
-            barrier.reach();
+            barrier.reach(); // Barrier 3
         }
 
         for (uint32_t i = 0; i < numThreads; ++i) {
             threads[i].join();
         }
 
-        ASSERT(result.size() == network.getSize(),
-               "Invalid result size=" << result.size() << ", for network" << network);
         ASSERT(!tooManyIterations, "Not able to find result in iterations=" << iterations);
 
+        ASSERT(result.size() == network.getSize(),
+               "Invalid result size=" << result.size() << ", for network" << network);
 
         return result;
     }
@@ -176,16 +172,16 @@ private:
         }
     }
 
-    void computePageRank(uint32_t threadNum, pageIdPairs const& edges, double alpha, Network const& network) const {
-        size_t pagesPerThread = network.getSize() / numThreads;
+    void
+    computePageRank(uint32_t threadNum, pageIdPairs const& edges, double alpha, Network const& network) const {
         std::vector<Page> const& pages = network.getPages();
 
-        auto beginningPages = pages.begin() + threadNum * pagesPerThread; // todo auto?
+        size_t pagesPerThread = network.getSize() / numThreads;
+        auto beginningPages = pages.begin() + threadNum * pagesPerThread;
         auto endPages = beginningPages + pagesPerThread;
 
-
         size_t edgesPerThread = edges.size() / numThreads;
-        auto beginningEdges = edges.begin() + threadNum * edgesPerThread; // todo auto?
+        auto beginningEdges = edges.begin() + threadNum * edgesPerThread;
         auto endEdges = beginningEdges + edgesPerThread;
 
         if (threadNum == numThreads - 1) {
@@ -195,47 +191,40 @@ private:
 
         double danglingWeight = 1.0 / network.getSize();
 
+        std::unordered_set<PageId, PageIdHash> danglingNodes;
+
+        auto currentPage = beginningPages;
+        while (currentPage != endPages) {
+            if (numLinks[currentPage->getId()] == 0) { // Read only, thread safe
+                danglingNodes.insert(currentPage->getId());
+            }
+            currentPage++;
+        }
+
         while (nextIteration) {
             pageRanksMap rankMap;
             double localDangleSum = 0;
             double localDifference = 0;
 
-            auto currentPages = beginningPages;
-            while (currentPages != endPages) {
-                rankMap[currentPages->getId()] = (1.0 - alpha) / network.getSize();
-                if (numLinks[currentPages->getId()] == 0) {
-                    localDangleSum += pageHashMap[currentPages->getId()]; // Read only, thread safe
-                }
-
-                currentPages++;
+            for (auto danglingNode : danglingNodes) {
+                localDangleSum += pageHashMap[danglingNode];
             }
 
-            { // Add dangle sum to global counter
+            if (localDangleSum != 0) {
+                // Add dangle sum to global counter
                 std::unique_lock<std::mutex> mutex_lock(mutex);
                 dangleSum += localDangleSum;
             }
 
-            barrier.reach();
+            auto currentEdge = beginningEdges;
+            while (currentEdge != endEdges) {
+                PageId source = currentEdge->first;
+                PageId target = currentEdge->second;
 
-            currentPages = beginningPages;
-            while (currentPages != endPages) {
-                rankMap[currentPages->getId()] += dangleSum * alpha * danglingWeight; // Read only, thread safe
-                currentPages++;
-            }
-
-
-            auto currentEdges = beginningEdges;
-            while (currentEdges != endEdges) {
-                PageId source = currentEdges->first;
-                PageId target = currentEdges->second;
-
-                if (rankMap.find(target) == rankMap.end()) {
-                    rankMap[target] = 0.0;
-                }
                 // Read only in this section, thread safe
                 rankMap[target] += alpha * pageHashMap[source] / numLinks[source];
 
-                currentEdges++;
+                currentEdge++;
             }
 
             { // Add rank sums to global map
@@ -244,29 +233,35 @@ private:
                     PageId pageId = idRank.first;
                     PageRank rank = idRank.second;
 
-                    if (currentPageHashMap.find(pageId) == currentPageHashMap.end()) {
-                        currentPageHashMap[pageId] = rank;
-                    } else {
-                        currentPageHashMap[pageId] += rank;
-                    }
+                    currentPageHashMap[pageId] += rank;
                 }
             }
 
-            barrier.reach();
+            barrier.reach(); // Barrier 1
 
-            currentPages = beginningPages;
-            while (currentPages != endPages) {
-                localDifference += std::abs(pageHashMap[currentPages->getId()] - currentPageHashMap[currentPages->getId()]);
-                currentPages++;
+            currentPage = beginningPages;
+            while (currentPage != endPages) { // Different threads accessing different pages, thread safe
+                auto currentRankIter = currentPageHashMap.find(currentPage->getId());
+                auto oldRankIter = pageHashMap.find(currentPage->getId());
+
+                PageRank currentRank = currentRankIter->second + (1.0 - alpha) / network.getSize() +
+                                       dangleSum * alpha * danglingWeight;
+
+                localDifference += std::abs(oldRankIter->second - currentRank);
+
+                oldRankIter->second = currentRank;
+                currentRankIter->second = 0;
+
+                currentPage++;
             }
 
-            { // Add dangle sum to global counter
+            { // Add local difference to global counter
                 std::unique_lock<std::mutex> mutex_lock(mutex);
                 difference += localDifference;
             }
 
-            barrier.reach();
-            barrier.reach();
+            barrier.reach(); // Barrier 2
+            barrier.reach(); // Barrier 3
         }
 
     }
