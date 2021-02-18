@@ -50,6 +50,7 @@ public:
             dangleSum = dangleSum * alpha;
 
             double difference = 0;
+
             for (auto& pageMapElem : pageHashMap) {
                 PageId pageId = pageMapElem.first;
 
@@ -66,8 +67,10 @@ public:
 
             std::vector<PageIdAndRank> result;
             for (auto iter : pageHashMap) {
+//                std::cout << iter.second << ' ';
                 result.push_back(PageIdAndRank(iter.first, iter.second));
             }
+//            std::cout << '\n';
 
             ASSERT(result.size() == network.getSize(), "Invalid result size=" << result.size() << ", for network" << network);
 

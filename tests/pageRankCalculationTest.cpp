@@ -44,14 +44,14 @@ int main()
     for (auto computer : computersToTest) {
 
         for (auto scenario : scenarios) {
-            // std::cout << "Starting scenario with numberOfNodes=" << scenario.numberOfNodes << ", alpha=" << scenario.alpha << std::endl;
+//             std::cout << "Starting scenario with numberOfNodes=" << scenario.numberOfNodes << ", alpha=" << scenario.alpha << std::endl;
             auto result = computer->computeForNetwork(
                 networkGenerator.generateNetworkOfSize(scenario.numberOfNodes),
                 scenario.alpha,
                 scenario.iterations,
                 scenario.tolerance);
             ResultVerificator::verifyResults(result, scenario.expectedResult, networkGenerator);
-            // std::cout << "Scenario finished with successed" << std::endl;
+//             std::cout << "Scenario finished with successed" << std::endl;
         }
     }
 
