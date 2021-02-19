@@ -82,7 +82,7 @@ private:
 
     using pageRankMap = std::unordered_map<PageId, PageRank, PageIdHash>;
 
-    using pageIteratorPair = std::pair<std::vector<Page const>::iterator, std::vector<Page const>::iterator>;
+    using pageIteratorPair = std::pair<std::vector<Page>::const_iterator, std::vector<Page>::const_iterator>;
 
     class Barrier {
     public:
@@ -133,6 +133,18 @@ private:
         nextIteration = true;
     }
 
+    template<typename T>
+    std::pair<typename std::vector<T>::const_iterator, typename std::vector<T>::const_iterator>
+    divideVector(std::vector<T> const& vector, uint32_t threadNum) const {
+        size_t sizePerThread = vector.size() / numThreads;
+        auto beginning = vector.begin() + threadNum * sizePerThread;
+        auto end = beginning + sizePerThread;
+        if (threadNum == numThreads - 1) {
+            end = vector.end();
+        }
+        return std::make_pair(beginning, end);
+    }
+
     void generateIds(Network const& network) const {
         std::vector<std::thread> threads;
 
@@ -146,10 +158,11 @@ private:
         }
     }
 
-    void generateIdsThread(uint32_t threadNum, Network const& network) const {
+    void generateIdsThread(uint32_t threadNum, Network const& network) const
+    {
         std::vector<Page> const& pages = network.getPages();
 
-        auto iteratorPair = divideVector(pages, threadNum);
+        pageIteratorPair iteratorPair = divideVector(pages, threadNum);
 
         for (auto current = iteratorPair.first; current != iteratorPair.second; ++current)
             current->generateId(network.getGenerator());
@@ -167,18 +180,6 @@ private:
                 edgesVectors.emplace_back(page.getId(), link);
             }
         }
-    }
-
-    template<typename T>
-    std::pair<typename std::vector<T const>::iterator, typename std::vector<T const>::iterator>
-    divideVector(std::vector<T> const& vector, uint32_t threadNum) const {
-        size_t sizePerThread = vector.size() / numThreads;
-        auto beginning = vector.begin() + threadNum * sizePerThread;
-        auto end = beginning + sizePerThread;
-        if (threadNum == numThreads - 1) {
-            end = vector.end();
-        }
-        return std::make_pair(beginning, end);
     }
 
     void getDanglingNodes(pageIteratorPair iteratorPairPages,

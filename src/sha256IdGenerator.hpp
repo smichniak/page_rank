@@ -11,7 +11,7 @@ public:
         char const READ_MODE[2] = "r";
         char hash_buffer[HASH_LENGTH];
 
-        std::string hash_command = "echo -n \"" + content + "\" | sha256sum";
+        std::string hash_command = "printf \"" + content + "\" | sha256sum";
         FILE* stream = popen(hash_command.c_str(), READ_MODE);
         if (!stream) {
             exit(1); // Failed to open pipe to to the other process
