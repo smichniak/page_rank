@@ -5,13 +5,10 @@
 
 class PageId {
 public:
-    PageId(std::string const& idArg)
-        : id(idArg)
-    {
+    PageId(std::string const& idArg) : id(idArg) {
     }
 
-    bool operator==(PageId const& other) const
-    {
+    bool operator==(PageId const& other) const {
         return this->id == other.id;
     }
 
@@ -21,20 +18,19 @@ private:
     friend std::ostream& operator<<(std::ostream& out, PageId const& pageId);
 
     friend class PageIdHash;
+
     // For tests only
     friend class PageIdAndRankComparable;
 };
 
 class PageIdHash {
 public:
-    std::size_t operator()(PageId const& pageId) const
-    {
-        return std::hash<std::string> {}(pageId.id);
+    std::size_t operator()(PageId const& pageId) const {
+        return std::hash<std::string>{}(pageId.id);
     };
 };
 
-std::ostream& operator<<(std::ostream& out, PageId const& pageId)
-{
+std::ostream& operator<<(std::ostream& out, PageId const& pageId) {
     out << pageId.id;
     return out;
 }

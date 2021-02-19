@@ -8,29 +8,22 @@
 
 class Network {
 public:
-    Network(IdGenerator const& idGeneratorArg)
-        : pages()
-        , idGenerator(idGeneratorArg)
-    {
+    Network(IdGenerator const& idGeneratorArg) : pages(), idGenerator(idGeneratorArg) {
     }
 
-    void addPage(Page const& page)
-    {
+    void addPage(Page const& page) {
         this->pages.push_back(page);
     }
 
-    size_t getSize() const
-    {
+    size_t getSize() const {
         return this->pages.size();
     }
 
-    std::vector<Page> const& getPages() const
-    {
+    std::vector<Page> const& getPages() const {
         return this->pages;
     }
 
-    IdGenerator const& getGenerator() const
-    {
+    IdGenerator const& getGenerator() const {
         return this->idGenerator;
     }
 
@@ -41,8 +34,7 @@ private:
     friend std::ostream& operator<<(std::ostream& out, Network const& page);
 };
 
-std::ostream& operator<<(std::ostream& out, Network const& network)
-{
+std::ostream& operator<<(std::ostream& out, Network const& network) {
     return printContainer(out, network.pages);
 }
 

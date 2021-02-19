@@ -84,6 +84,9 @@ private:
 
     using pageIteratorPair = std::pair<std::vector<Page>::const_iterator, std::vector<Page>::const_iterator>;
 
+    /*
+     * Reusable barrier, waits for resistance number of threads
+     */
     class Barrier {
     public:
         explicit Barrier(uint32_t resistance) : resistance(resistance), waiting(0), generation(0) {}
@@ -93,6 +96,7 @@ private:
             std::size_t current_generation = generation;
 
             if (++waiting < resistance) {
+                // If current generation is different than remembered generation, all threads have reach the barrier
                 waiting_threads.wait(mutex_lock,
                                      [this, current_generation] { return current_generation != generation; });
             } else {
@@ -110,20 +114,22 @@ private:
         std::size_t generation;
     };
 
-    uint32_t numThreads;
-    // todo name types
+    uint32_t numThreads; // Number of threads in the pool
 
-    mutable pageRankMap pageHashMap;
-    mutable pageRankMap currentPageHashMap;
-    mutable std::unordered_map<PageId, uint32_t, PageIdHash> numLinks;
+    mutable pageRankMap pageHashMap; // Stores rank for each page from last iteration
+    mutable pageRankMap currentPageHashMap; // Stores rank for each page from current iteration
+    mutable std::unordered_map<PageId, uint32_t, PageIdHash> numLinks; // Stores number of links outgoing from each page
 
-    mutable Barrier barrier;
-    mutable std::mutex mutex;
+    mutable Barrier barrier; // Synchronizes threads
+    mutable std::mutex mutex; // Used for writing to Computer attributes
 
-    mutable bool nextIteration;
-    mutable double dangleSum;
-    mutable double difference;
+    mutable bool nextIteration; // True if PageRank should continue with next iteration of algorithm
+    mutable double dangleSum; // Sum of ranks of dangling nodes in a given iteration
+    mutable double difference; // Sum of differences between new and old ranks for each page
 
+    /*
+     * Resets computer attributes before every computation
+     */
     void resetComputer() const {
         pageHashMap = pageRankMap();
         currentPageHashMap = pageRankMap();
@@ -133,6 +139,10 @@ private:
         nextIteration = true;
     }
 
+    /*
+     * Divides vector into equal parts for each thread, returns iterators to first and one after the last
+     * elements of the part for given thread
+     */
     template<typename T>
     std::pair<typename std::vector<T>::const_iterator, typename std::vector<T>::const_iterator>
     divideVector(std::vector<T> const& vector, uint32_t threadNum) const {
@@ -145,6 +155,9 @@ private:
         return std::make_pair(beginning, end);
     }
 
+    /*
+     * Creates threads that generate Ids for each page
+     */
     void generateIds(Network const& network) const {
         std::vector<std::thread> threads;
 
@@ -158,16 +171,22 @@ private:
         }
     }
 
-    void generateIdsThread(uint32_t threadNum, Network const& network) const
-    {
+    /*
+     * Function used by threads in the pool to generate Ids for their pages
+     */
+    void generateIdsThread(uint32_t threadNum, Network const& network) const {
         std::vector<Page> const& pages = network.getPages();
 
         pageIteratorPair iteratorPair = divideVector(pages, threadNum);
 
-        for (auto current = iteratorPair.first; current != iteratorPair.second; ++current)
-            current->generateId(network.getGenerator());
+        for (auto currentPage = iteratorPair.first; currentPage != iteratorPair.second; ++currentPage)
+            currentPage->generateId(network.getGenerator());
     }
 
+    /*
+     * Inserts all edges from network into edgesVectors, initializes pageHashMap, currentPageHashMap
+     * and numLinks
+     */
     void initializeEdges(Network const& network, pageIdPairs& edgesVectors) const {
         PageRank initialRank = 1.0 / network.getSize();
 
@@ -182,6 +201,10 @@ private:
         }
     }
 
+    /*
+     * Inserts dangling nodes between iteratorPairPages.first and iteratorPairPages.second into
+     * the given set
+     */
     void getDanglingNodes(pageIteratorPair iteratorPairPages,
                           std::unordered_set<PageId, PageIdHash>& danglingNodes) const {
         for (auto currentPage = iteratorPairPages.first;
@@ -192,7 +215,9 @@ private:
         }
     }
 
-    // Add rank sums to global map
+    /*
+     * Adds ranks of nodes from rankMap to global map of current ranks
+     */
     void addRankSums(pageRankMap const& rankMap) const {
         std::unique_lock<std::mutex> mutex_lock(mutex);
         for (auto idRank : rankMap) {
@@ -203,6 +228,10 @@ private:
         }
     }
 
+    /*
+     * Returns sum of new and old ranks differences of nodes between iteratorPairPages.first and
+     * iteratorPairPages.second, sets the old rank to the current rank and current rank to 0
+     */
     PageRank getLocalDifference(pageIteratorPair iteratorPairPages, double alpha, size_t networkSize) const {
         PageRank localDifference = 0;
         double danglingWeight = 1.0 / networkSize;
@@ -225,6 +254,9 @@ private:
         return localDifference;
     }
 
+    /*
+     * Function used by threads in the pool, manages iterations of PageRank algorithm
+     */
     void
     computePageRank(uint32_t threadNum, pageIdPairs const& edges, double alpha, Network const& network) const {
         std::vector<Page> const& pages = network.getPages();
@@ -239,7 +271,7 @@ private:
             pageRankMap rankMap;
             double localDangleSum = 0;
 
-            for (auto danglingNode : danglingNodes) {
+            for (PageId const& danglingNode : danglingNodes) {
                 localDangleSum += pageHashMap[danglingNode];
             }
 
@@ -255,11 +287,14 @@ private:
                 // currentEdge->first - link source
                 // currentEdge->second - link target
                 // pageHashMap and numLinks read only in this section, thread safe
-                rankMap[currentEdge->second] += alpha * pageHashMap[currentEdge->first] / numLinks[currentEdge->first];
+                rankMap[currentEdge->second] +=
+                        alpha * pageHashMap[currentEdge->first] / numLinks[currentEdge->first];
             }
 
             addRankSums(rankMap);
 
+            // Difference between old and new ranks can be calculated only after all threads have
+            // finished calculating the new ranks
             barrier.reach(); // Barrier 1
 
             double localDifference = getLocalDifference(iteratorPairPages, alpha, network.getSize());
@@ -269,13 +304,14 @@ private:
                 difference += localDifference;
             }
 
+            // Main thread can start updating nextIteration after all threads reach barrier 2
             barrier.reach(); // Barrier 2
+
+            // Waits for nextIteration update
             barrier.reach(); // Barrier 3
         }
 
     }
-
-
 };
 
 #endif /* SRC_MULTITHREADEDPAGERANKCOMPUTER_HPP_ */

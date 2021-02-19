@@ -15,9 +15,8 @@
         }                                        \
     } while (0)
 
-template <typename T>
-std::ostream& printContainer(std::ostream& out, T const& container)
-{
+template<typename T>
+std::ostream& printContainer(std::ostream& out, T const& container) {
     for (auto iter = container.begin(); iter != container.end(); ++iter) {
         out << *iter;
         if (std::next(iter) != container.end()) // not last

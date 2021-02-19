@@ -12,34 +12,25 @@
 
 class Page {
 public:
-    Page(std::string const& contentArg)
-        : id("")
-        , isIdComputed(false)
-        , content(contentArg)
-        , links()
-    {
+    Page(std::string const& contentArg) : id(""), isIdComputed(false), content(contentArg), links() {
     }
 
-    void generateId(IdGenerator const& idGenerator) const
-    {
+    void generateId(IdGenerator const& idGenerator) const {
         ASSERT(not this->isIdComputed, "Generating id twice");
         this->id = idGenerator.generateId(this->content);
         this->isIdComputed = true;
     }
 
-    PageId getId() const
-    {
+    PageId getId() const {
         ASSERT(this->isIdComputed, "Getting id while empty");
         return this->id;
     }
 
-    void addLink(PageId const& link)
-    {
+    void addLink(PageId const& link) {
         this->links.push_back(link);
     }
 
-    std::vector<PageId> const& getLinks() const
-    {
+    std::vector<PageId> const& getLinks() const {
         return this->links;
     }
 
@@ -53,8 +44,7 @@ private:
     friend std::ostream& operator<<(std::ostream& out, Page const& page);
 };
 
-std::ostream& operator<<(std::ostream& out, Page const& page)
-{
+std::ostream& operator<<(std::ostream& out, Page const& page) {
     out << "(";
     out << (page.isIdComputed ? page.id : std::string("NO_ID"));
 

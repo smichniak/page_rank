@@ -13,30 +13,23 @@ class SingleThreadedPageRankComputer : public PageRankComputer {
 public:
     SingleThreadedPageRankComputer() {};
 
-    std::vector<PageIdAndRank> computeForNetwork(Network const& network, double alpha, uint32_t iterations, double tolerance) const
-    {
+    std::vector<PageIdAndRank>
+    computeForNetwork(Network const& network, double alpha, uint32_t iterations, double tolerance) const {
         std::unordered_map<PageId, PageRank, PageIdHash> pageHashMap;
+        std::unordered_map<PageId, uint32_t, PageIdHash> numLinks;
+        std::unordered_set<PageId, PageIdHash> danglingNodes;
+        std::unordered_map<PageId, std::vector<PageId>, PageIdHash> edges;
+
         for (auto const& page : network.getPages()) {
             page.generateId(network.getGenerator());
             pageHashMap[page.getId()] = 1.0 / network.getSize();
-        }
-
-        std::unordered_map<PageId, uint32_t, PageIdHash> numLinks;
-        for (auto page : network.getPages()) {
             numLinks[page.getId()] = page.getLinks().size();
-        }
-
-        std::unordered_set<PageId, PageIdHash> danglingNodes;
-        for (auto page : network.getPages()) {
             if (page.getLinks().size() == 0) {
                 danglingNodes.insert(page.getId());
-            }
-        }
-
-        std::unordered_map<PageId, std::vector<PageId>, PageIdHash> edges;
-        for (auto page : network.getPages()) {
-            for (auto link : page.getLinks()) {
-                edges[link].push_back(page.getId());
+            } else {
+                for (auto link : page.getLinks()) {
+                    edges[link].push_back(page.getId());
+                }
             }
         }
 
@@ -65,16 +58,15 @@ public:
                 difference += std::abs(previousPageHashMap[pageId] - pageHashMap[pageId]);
             }
 
-            std::vector<PageIdAndRank> result;
-            for (auto iter : pageHashMap) {
-//                std::cout << iter.second << ' ';
-                result.push_back(PageIdAndRank(iter.first, iter.second));
-            }
-//            std::cout << '\n';
-
-            ASSERT(result.size() == network.getSize(), "Invalid result size=" << result.size() << ", for network" << network);
-
             if (difference < tolerance) {
+                std::vector<PageIdAndRank> result;
+                for (auto iter : pageHashMap) {
+                    result.push_back(PageIdAndRank(iter.first, iter.second));
+                }
+
+                ASSERT(result.size() == network.getSize(),
+                       "Invalid result size=" << result.size() << ", for network" << network);
+
                 return result;
             }
         }
@@ -82,8 +74,7 @@ public:
         ASSERT(false, "Not able to find result in iterations=" << iterations);
     }
 
-    std::string getName() const
-    {
+    std::string getName() const {
         return "SingleThreadedPageRankComputer";
     }
 };

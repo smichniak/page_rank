@@ -4,7 +4,7 @@ project (page_rank CXX)
 find_package ( Threads REQUIRED )
 
 set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_FLAGS "-g -Wall -Wextra -Werror -O0") # TODO Remove -O0
+set(CMAKE_CXX_FLAGS "-g -Wall -Wextra -Werror")
 
 # http://stackoverflow.com/questions/10555706/
 macro (add_executable _name)
