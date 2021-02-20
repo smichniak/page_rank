@@ -8,3 +8,5 @@ cmake-build-debug/
 main.cpp
 
 cmake-build-release/
+
+performance.txt

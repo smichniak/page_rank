@@ -6,4 +6,4 @@ add_executable(pageRankPerformanceTest pageRankPerformanceTest.cpp)
 
 add_executable(e2eTest e2eTest.cpp)
 
-add_executable(main main.cpp) #TODO Remove
+add_executable(main main.cpp)
